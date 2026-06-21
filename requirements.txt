@@ -1,0 +1,9 @@
+# ------------------------------
+# opencv-python / cv2
+# mediapipe
+# gpiozero
+# lgpio
+# ------------------------------
+
+
+pip install mediapipe gpiozero lgpio
