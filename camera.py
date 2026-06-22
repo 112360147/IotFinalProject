@@ -82,26 +82,37 @@ class FaceTracker:
     def track(self, faces):
         if len(faces) == 0:
             self.motor.stop()
-            return None, False
+            return None, None, False
 
-        face = max(faces, key=lambda f: f[2] * f[3])
-        x, y, w, h = face
-
-        face_center_x = x + w // 2
-        error_x = face_center_x - self.center_x
+        target_center = self.get_target_center(faces)
+        error_x = target_center[0] - self.center_x
 
         if error_x > self.dead_zone:
             self.motor.step(direction=-1, steps=self.motor_steps)
-            return face, True
+            return faces, target_center, True
 
         elif error_x < -self.dead_zone:
             self.motor.step(direction=1, steps=self.motor_steps)
-            return face, True
+            return faces, target_center, True
 
         else:
             self.motor.stop()
 
-        return face, False
+        return faces, target_center, False
+
+    def get_target_center(self, faces):
+        if len(faces) == 1:
+            x, y, w, h = faces[0]
+            return x + w // 2, y + h // 2
+
+        centers = []
+        for x, y, w, h in faces:
+            centers.append((x + w // 2, y + h // 2))
+
+        center_x = sum(center[0] for center in centers) // len(centers)
+        center_y = sum(center[1] for center in centers) // len(centers)
+
+        return center_x, center_y
 
 
 class YaGestureDetector:
@@ -245,7 +256,7 @@ def run_camera_session(
             frame = cv2.flip(frame, 1)
 
             faces = face_detector.detect(frame)
-            face, is_centering = face_tracker.track(faces)
+            tracked_faces, target_center, is_centering = face_tracker.track(faces)
 
             is_ya = ya_detector.process(frame)
             captured, status_text = ya_detector.update_capture_state(
@@ -264,15 +275,26 @@ def run_camera_session(
                 1
             )
 
-            if face is not None:
-                x, y, w, h = face
+            if tracked_faces is not None:
+                face_centers = []
 
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                for x, y, w, h in tracked_faces:
+                    face_center_x = x + w // 2
+                    face_center_y = y + h // 2
+                    face_centers.append((face_center_x, face_center_y))
 
-                face_center_x = x + w // 2
-                face_center_y = y + h // 2
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    cv2.circle(frame, (face_center_x, face_center_y), 4, (0, 0, 255), -1)
 
-                cv2.circle(frame, (face_center_x, face_center_y), 5, (0, 0, 255), -1)
+                if len(face_centers) > 1:
+                    ordered_centers = sorted(face_centers, key=lambda center: center[0])
+
+                    for start, end in zip(ordered_centers, ordered_centers[1:]):
+                        cv2.line(frame, start, end, (255, 255, 0), 1)
+
+                    cv2.circle(frame, target_center, 7, (0, 255, 255), -1)
+                else:
+                    cv2.circle(frame, target_center, 5, (0, 0, 255), -1)
 
             if is_centering:
                 color = (0, 255, 255)
