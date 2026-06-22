@@ -82,7 +82,7 @@ class FaceTracker:
     def track(self, faces):
         if len(faces) == 0:
             self.motor.stop()
-            return None
+            return None, False
 
         face = max(faces, key=lambda f: f[2] * f[3])
         x, y, w, h = face
@@ -92,14 +92,16 @@ class FaceTracker:
 
         if error_x > self.dead_zone:
             self.motor.step(direction=-1, steps=self.motor_steps)
+            return face, True
 
         elif error_x < -self.dead_zone:
             self.motor.step(direction=1, steps=self.motor_steps)
+            return face, True
 
         else:
             self.motor.stop()
 
-        return face
+        return face, False
 
 
 class YaGestureDetector:
@@ -151,8 +153,12 @@ class YaGestureDetector:
 
         return is_ya
 
-    def update_capture_state(self, frame, is_ya):
+    def update_capture_state(self, frame, is_ya, can_capture=True):
         now = time.time()
+
+        if not can_capture:
+            self.ya_start_time = None
+            return False, "Centering"
 
         if now - self.last_capture_time < self.cooldown:
             self.ya_start_time = None
@@ -239,10 +245,14 @@ def run_camera_session(
             frame = cv2.flip(frame, 1)
 
             faces = face_detector.detect(frame)
-            face = face_tracker.track(faces)
+            face, is_centering = face_tracker.track(faces)
 
             is_ya = ya_detector.process(frame)
-            captured, status_text = ya_detector.update_capture_state(frame, is_ya)
+            captured, status_text = ya_detector.update_capture_state(
+                frame,
+                is_ya,
+                can_capture=not is_centering
+            )
             if captured:
                 captured_any_photo = True
 
@@ -264,7 +274,9 @@ def run_camera_session(
 
                 cv2.circle(frame, (face_center_x, face_center_y), 5, (0, 0, 255), -1)
 
-            if is_ya:
+            if is_centering:
+                color = (0, 255, 255)
+            elif is_ya:
                 color = (0, 255, 0)
             else:
                 color = (0, 0, 255)
